@@ -8,30 +8,38 @@ class Program
 {
     // Class-level variables to store the data type and variables
     static string data_type;
-    static string[] variables;
+    static List<string> variables;
+    static List<string> file_paths = new List<string>();
 
     static void Main()
     {
-        string inputFilePath = "C:\\Primary_CAPPS.xlsx";
+        string inputFilePath = "C:\\Users\\deniz\\source\\Primary_CAPPS.xlsx";
         string outputFilePath = "C:\\Users\\deniz\\source\\Primary_Processed_CAPPS.xlsx";
 
         var columnsData = ReadFirstColumnFromFirstWorksheet(inputFilePath);
-        var processedData = new List<(string, string[])>();
+        var secondColumnsData = ReadSecondColumnFromFirstWorksheet(inputFilePath);
+        var processedData = new List<(string, List<string>, string)>();
 
-        foreach (var columnData in columnsData)
+        for (int i = 0; i < columnsData.Count; i++)
         {
+            string columnData = columnsData[i];
+            string secondColumnData = secondColumnsData[i];
+
             // Trigger ParseWords function.
             string[] parsedWords = ParseWords(columnData);
 
             // Trigger categorize function.
             categorize(parsedWords);
 
-            // Store the processed data
-            processedData.Add((data_type, variables));
+            // Store the processed data with the corresponding file path
+            processedData.Add((data_type, variables, secondColumnData));
         }
 
-        // Write the processed data to a new Excel file
-        WriteToExcel(outputFilePath, processedData);
+        // Transform the data into the desired format
+        var transformedData = TransformData(processedData);
+
+        // Write the transformed data to a new Excel file
+        WriteToExcel(outputFilePath, transformedData);
     }
 
     // Detect every single word and put them in a string array.
@@ -62,24 +70,25 @@ class Program
     // Categorize the parsed string.
     static void categorize(string[] rawCode)
     {
-        if (rawCode.Length < 1)
+        if (rawCode.Length < 2)
         {
             Console.WriteLine("Invalid data format.");
             return;
         }
 
         // Initialize the data type.
-        data_type = rawCode[1];
+        data_type = rawCode[1]; // Assuming the first element is the data type.
 
         // Initialize the variables.
-        List<string> variableList = new List<string>();
+        variables = new List<string>();
         for (int i = 2; i < rawCode.Length; i++)
         {
-            variableList.Add(rawCode[i]);
+            // Ensure we don't add the data type itself as a variable
+            if (rawCode[i] != data_type)
+            {
+                variables.Add(rawCode[i]);
+            }
         }
-
-        // Assign the variables to the class-level array.
-        variables = variableList.ToArray();
     }
 
     // Read the excel file.
@@ -110,8 +119,52 @@ class Program
         return firstColumnData;
     }
 
-    // Write the processed data to a new Excel file.
-    static void WriteToExcel(string filePath, List<(string dataType, string[] variables)> data)
+    // Read the second column.
+    static List<string> ReadSecondColumnFromFirstWorksheet(string filePath)
+    {
+        List<string> secondColumnData = new List<string>();
+
+        // Load the Excel file.
+        var fileInfo = new FileInfo(filePath);
+
+        // Set the license context for EPPlus.
+        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+
+        using (var package = new ExcelPackage(fileInfo))
+        {
+            var workbook = package.Workbook;
+            var worksheet = workbook.Worksheets[0];
+
+            // Read the second column starting from the second row.
+            int rowCount = worksheet.Dimension.Rows;
+            for (int row = 2; row <= rowCount; row++)
+            {
+                var cellValue = worksheet.Cells[row, 2].Text; // Read from the second column
+                secondColumnData.Add(cellValue);
+            }
+        }
+
+        return secondColumnData;
+    }
+
+    // Transform the processed data into the desired format.
+    static List<(string dataType, string variable, string filePath)> TransformData(List<(string dataType, List<string> variables, string filePath)> data)
+    {
+        var transformedData = new List<(string dataType, string variable, string filePath)>();
+
+        foreach (var entry in data)
+        {
+            foreach (var variable in entry.variables)
+            {
+                transformedData.Add((entry.dataType, variable, entry.filePath));
+            }
+        }
+
+        return transformedData;
+    }
+
+    // Write the transformed data to a new Excel file.
+    static void WriteToExcel(string filePath, List<(string dataType, string variable, string filePath)> data)
     {
         // Create a new file info object
         var fileInfo = new FileInfo(filePath);
@@ -126,32 +179,16 @@ class Program
 
             // Write the headers
             worksheet.Cells[1, 1].Value = "Data Type";
-
-            // Determine the maximum number of variables
-            int maxVariables = 0;
-            foreach (var entry in data)
-            {
-                if (entry.variables.Length > maxVariables)
-                {
-                    maxVariables = entry.variables.Length;
-                }
-            }
-
-            // Write variable headers dynamically
-            for (int i = 1; i <= maxVariables; i++)
-            {
-                worksheet.Cells[1, i + 1].Value = $"Variable-{i}";
-            }
+            worksheet.Cells[1, 2].Value = "Variable";
+            worksheet.Cells[1, 3].Value = "File";
 
             // Write the data
             int row = 2;
             foreach (var entry in data)
             {
                 worksheet.Cells[row, 1].Value = entry.dataType;
-                for (int col = 0; col < entry.variables.Length; col++)
-                {
-                    worksheet.Cells[row, col + 2].Value = entry.variables[col];
-                }
+                worksheet.Cells[row, 2].Value = entry.variable;
+                worksheet.Cells[row, 3].Value = entry.filePath;
                 row++;
             }
 
